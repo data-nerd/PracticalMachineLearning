@@ -1,5 +1,5 @@
-# Object file
-*.o
+# Downloaded files
+*.csv
 
-# Ada Library Information
-*.ali
+# Temporary working directory
+temp/**
