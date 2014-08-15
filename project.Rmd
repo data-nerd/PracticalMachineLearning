@@ -1,0 +1,166 @@
+Weight Lifting Exercises
+========================
+*Are you doing it right?*
+
+# Summary
+
+The purpose of this exercise was to predict how well subjects performed weight
+lifting exercises. On-body sensors were used to measure several aspects of how
+the subjects performed the exercises. The training set contains ratings for
+correctly executed lifts (class A) and common mistakes (classes B-E).
+
+A random forest model was used and proved to be very effective in predicting
+the classes. An out-of-sample error rate of only 0.65% was predicted by the
+model and confirmed by a confusion matrix created against a cross-validation
+set.
+
+Further work could be done to tune the model to train more quickly (fewer
+trees, fewer variables).
+
+The data set was provided by:
+
+*Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.*
+
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz3ALAfFJ9s
+
+## Getting and Cleaning the Data
+
+### Downloading
+
+```{r echo=FALSE}
+setwd('e:/github/PracticalMachineLearning/temp')
+#download.file(
+#    "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+#    "pml-training.csv", mode="wb")
+trainingFull <- read.csv("pml-training.csv")
+```
+
+After reading in the data we confirm the number of rows in the dataset (there
+are 19,622 observations on 160 variables) and spot check the first few rows.
+
+```{r echo=TRUE}
+dim(trainingFull)
+trainingFull[1:5, 1:5]
+```
+
+### Cleaning
+
+The original data set has many summary rows and observations included alongside
+the raw data. We subset the original data to include just the rows and columns
+that are complete and not derivations from other data. This not only gives our
+classification algorithm better data, but less of it so that it will run faster.
+
+```{r echo=TRUE}
+# Select just the columns that begin with roll, pitch, or yaw OR that end in
+# _x, _y, or _z, OR that are the user name or outcome.
+trainingSubset <- subset(trainingFull,
+            new_window == 'no',
+            select=colnames(trainingFull)[grep('((^roll|^pitch|^yaw)|(_[xyz]$)|user_name|classe)', colnames(trainingFull))])
+trainingSubset$user_name <- as.factor(trainingSubset$user_name)
+trainingSubset$classe <- as.factor(trainingSubset$classe)
+```
+
+## Developing a Model
+
+The `caret` package was used to create a cross-validation set from the training
+data and run a random forest model.
+
+```{r echo=TRUE}
+library(caret)
+set.seed(12345)     # Set the seed to make the results reproducible
+
+# Create a subset of the training set for cross-validation
+inTrain <- createDataPartition(trainingSubset$classe, p=0.75, list=FALSE)
+training <- trainingSubset[inTrain,]
+crossValidationTest <- trainingSubset[-inTrain,]
+```
+
+Take the slow and lazy route: train a model with every variable and let the
+random forest algorithm determine what's important. With 14,414 observations
+on 50 variables (the training set which was selected from the subset of the
+original data) this takes 5 hours to run.
+
+```{r echo=TRUE}
+model <- train(classe ~ ., data=training, method="rf", prox=TRUE, importance=TRUE)
+model$finalModel
+```
+
+The final model has an out-of-bag (OOB) estimated error rate of *0.65%*. That's
+so good I would worry that the forest overfit the data.
+
+A nice feature of the random forest model is that a plot of the model shows
+how the error rate improved as the number of trees increased.
+
+```{r echo=TRUE}
+plot(model$finalModel)
+```
+
+In this case a model of 100 trees had a very similar error rate to the one
+trained with 500 trees, so it makes sense to iterate using a model with fewer
+trees.
+
+## Testing the Model
+
+The model was tested using the cross-validation subset of the cleaned training
+data. Caret makes it trivial to predict new values using the model and a
+confusion matrix provides a nice summary of the errors.
+
+```{r echo=TRUE}
+crossValidationPredictions <- predict(model, newdata=crossValidationTest)
+
+confusionMatrix(crossValidationPredictions, crossValidationTest$classe)
+```
+
+In this case we had an accuracy of over 99% so our fear that we overfit the
+data was reduced. The model looks strong.
+
+## Making Predictions
+
+All that preparation was leading up to the main event: predicting unknown
+classes from the data given in the test set. Again, caret provides a simple
+framework for doing so.
+
+```{r echo=FALSE}
+setwd('e:/github/PracticalMachineLearning/temp')
+# download.file(
+#  "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+#  "pml-testing.csv", mode="wb")
+test <- read.csv("pml-testing.csv")
+
+testPredictions <- predict(model, newdata=test)
+```
+
+Quick sanity check of the predictions:
+
+```{r echo=TRUE}
+table(testPredictions)
+```
+
+Output the predictions to files ready for submission.
+
+```{r echo=TRUE}
+# Function takes a character vector and creates a file for each character answer
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(testPredictions)
+```
+
+I submitted the predictions made with the original 500-tree model and all
+predictions were correct.
+
+## Appendix: Further Work
+
+Tuning the number of trees needed would save much time in training, as would
+selecting fewer variables to act as predictors. The following lists variables
+that were important in training the model, some or all of which could be used
+by future models.
+
+```{r echo=TRUE}
+varImp(model)
+```
